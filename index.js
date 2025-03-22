@@ -4,21 +4,22 @@ const fs = require("fs");
 const readline = require("readline");
 const process = require("process");
 const dns = require("dns");
+const chalk = require("chalk"); // Colorare text
 
-// Interfață simplă pentru input
+// Interfață pentru input
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
 
-// Delay simplu
+// Delay
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
-// Fișiere pentru progres și autentificare
+// Fișiere progres și autentificare
 const PROGRESS_FILE = "progress.json";
 const AUTH_FOLDER = "./auth_info";
 
-// Salvare progres (indexul ultimului mesaj trimis)
+// Salvare progres
 function saveProgress(index) {
     fs.writeFileSync(PROGRESS_FILE, JSON.stringify({ lastIndex: index }), "utf-8");
 }
@@ -36,35 +37,23 @@ function loadProgress() {
     return 0;
 }
 
-// Funcție simplă pentru a întreba input
+// Întrebare input
 function askQuestion(query) {
     return new Promise((resolve) => {
-        rl.question(query, (answer) => {
+        rl.question(chalk.red(query), (answer) => {
             resolve(answer.trim());
         });
     });
 }
 
-// Funcție de keep-alive: trimite periodic update de prezență
-function startKeepAlive(socket) {
-    setInterval(() => {
-        try {
-            socket.sendPresenceUpdate("available");
-            // Nu afișăm loguri pentru keep-alive
-        } catch (e) {
-            // Ignorăm erorile de keep-alive
-        }
-    }, 60000); // la fiecare 60 de secunde
-}
-
-// Verifică conexiunea la internet și așteaptă până revine
+// Verificare internet
 async function waitForInternet() {
-    console.log("🔄 Waiting for internet to come back...");
+    console.log(chalk.red("🔄 Aștept conexiunea la internet..."));
     return new Promise((resolve) => {
         const interval = setInterval(() => {
             dns.resolve("google.com", (err) => {
                 if (!err) {
-                    console.log("✅ Internet is back! Reconnecting...");
+                    console.log(chalk.red("✅ Internetul a revenit! Reîncerc conectarea..."));
                     clearInterval(interval);
                     resolve(true);
                 }
@@ -73,138 +62,162 @@ async function waitForInternet() {
     });
 }
 
-// Inițializează conexiunea la WhatsApp și menține stabilitatea
-async function startBot() {
-    console.log("🔥 Starting WhatsApp Bot...");
+// Afișăm bannerul la început
+console.log(chalk.red(`
+==================================
+        CAGULA REGELE TAU
+==================================
+`));
 
+// Inițializează conexiunea stabilă
+async function startBot() {
+    console.log(chalk.red("🔥 Pornire bot WhatsApp..."));
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
+
     let socket = makeWASocket({
         auth: state,
-        logger: Pino({ level: "silent" }),
-        connectTimeoutMs: 60000,
-        browser: ["WhatsApp Bot", "Chrome", "1.0"]
+        logger: Pino({ level: "silent" }), // Dezactivare loguri inutile
+        connectTimeoutMs: 60000
     });
 
-    // Dacă nu este înregistrată sesiunea, cere pairing code
+    // Dacă nu există sesiune, cere pairing code
     if (!socket.authState.creds.registered) {
-        const phoneNumber = await askQuestion("Enter your phone number for pairing (e.g. 393533870586): ");
+        const phoneNumber = await askQuestion("📲 Enter your phone number for pairing (e.g. 393533870586): ");
         try {
             const pairingCode = await socket.requestPairingCode(phoneNumber);
-            console.log(`✅ Pairing code: ${pairingCode}`);
-            console.log("Please open WhatsApp and enter this code under 'Linked Devices'.");
+            console.log(chalk.red(`✅ Pairing code: ${pairingCode}`));
+            console.log(chalk.red("🔗 Open WhatsApp and enter this code in 'Linked Devices'."));
         } catch (error) {
-            console.error("❌ Error generating pairing code:", error);
+            console.error(chalk.red("❌ Eroare generare pairing code:", error));
         }
     } else {
-        console.log("✅ Session is already authenticated!");
+        console.log(chalk.red("✅ Conectat deja!"));
     }
 
-    // Evenimente de conexiune
+    // Gestionare evenimente conexiune
     socket.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect } = update;
-
         if (connection === "open") {
-            console.log("✅ Connected to WhatsApp!");
-            startKeepAlive(socket); // Începem heartbeat-ul pentru a menține conexiunea
+            console.log(chalk.red("✅ Conectat la WhatsApp!"));
             await afterConnection(socket);
         } else if (connection === "close") {
-            console.log("⚠️ Connection closed.");
+            console.log(chalk.red("⚠️ Conexiunea s-a întrerupt."));
             const reason = lastDisconnect?.error?.output?.statusCode;
-
             if (reason !== DisconnectReason.loggedOut) {
                 await waitForInternet();
                 await startBot();
             } else {
-                console.log("❌ Logged out. Restart the script to reauthenticate.");
+                console.log(chalk.red("❌ Deconectare definitivă. Restart manual necesar."));
                 process.exit(1);
             }
         }
     });
 
+    // Salvare credențiale
     socket.ev.on("creds.update", saveCreds);
-    return socket;
 }
 
-// După conectare, solicită datele despre unde se trimit mesajele și începe trimiterea
+// După conectare, gestionează trimiterea mesajelor
 async function afterConnection(sock) {
-    let targets, messages, msgDelay;
-    
-    if (globalThis.targets && globalThis.messages && globalThis.msgDelay) {
-        console.log("📩 Resuming message sending from where it left off...");
+    let targets, messages, messageDelay;
+
+    // Dacă deja există date salvate, nu mai cerem
+    if (globalThis.targets && globalThis.messages && globalThis.messageDelay) {
+        console.log(chalk.red("📩 Reluare trimitere mesaje de unde a rămas..."));
         targets = globalThis.targets;
         messages = globalThis.messages;
-        msgDelay = globalThis.msgDelay;
+        messageDelay = globalThis.messageDelay;
     } else {
-        console.log("\n🌐 Where would you like to send messages?");
-        console.log("[1] Contacts");
-        console.log("[2] Groups");
+        console.log(chalk.red("\n🌐 Selectează unde dorești să trimiți mesaje:"));
+        console.log(chalk.red("[1] Contacte"));
+        console.log(chalk.red("[2] Grupuri"));
+        const choice = await askQuestion(chalk.red("🔹 Alegere (1/2): "));
 
-        const choice = await askQuestion("Enter your choice (1 or 2): ");
         targets = [];
 
         if (choice === "1") {
-            const numContacts = parseInt(await askQuestion("How many contacts? "), 10);
+            const numContacts = parseInt(await askQuestion(chalk.red("📞 Câte contacte? ")), 10);
             for (let i = 0; i < numContacts; i++) {
-                const targetNumber = await askQuestion(`Enter phone number for Contact ${i + 1} (without +, e.g. 393533870586): `);
+                const targetNumber = await askQuestion(chalk.red(`📱 Număr contact ${i + 1} (ex. 393533870586): `));
                 targets.push(`${targetNumber}@s.whatsapp.net`);
             }
         } else if (choice === "2") {
-            console.log("Fetching group information...");
+            console.log(chalk.red("🔄 Se încarcă grupurile..."));
             try {
                 const groupMetadata = await sock.groupFetchAllParticipating();
                 const groups = Object.values(groupMetadata);
-                console.log("\nAvailable groups:");
-                groups.forEach((g) => {
-                    console.log(`${g.subject} - ID: ${g.id}`);
+
+                console.log(chalk.red("\n👥 Grupuri disponibile:"));
+                groups.forEach((g, index) => {
+                    console.log(chalk.red(`[${index + 1}] ${g.subject}`));
                 });
-                const numGroups = parseInt(await askQuestion("How many groups? "), 10);
-                for (let i = 0; i < numGroups; i++) {
-                    const groupJID = await askQuestion(`Enter group ID for Group ${i + 1} (e.g. 1234567890-123456@g.us): `);
-                    targets.push(groupJID);
-                }
+
+                const selectedGroups = await askQuestion(chalk.red("📌 Introdu numerele grupurilor (ex. 1,2,3): "));
+                const groupIndexes = selectedGroups.split(",").map((num) => parseInt(num.trim(), 10) - 1);
+
+                groupIndexes.forEach((idx) => {
+                    if (groups[idx]) {
+                        targets.push(groups[idx].id);
+                    }
+                });
             } catch (error) {
-                console.error("❌ Error fetching groups:", error);
+                console.error(chalk.red("❌ Eroare la obținerea grupurilor:", error));
                 process.exit(1);
             }
         } else {
-            console.log("❌ Invalid choice. Exiting.");
+            console.log(chalk.red("❌ Opțiune invalidă. Iesire..."));
             process.exit(1);
         }
 
-        const filePath = await askQuestion("Enter the path to your text file (e.g., spam.txt): ");
-        if (!fs.existsSync(filePath)) {
-            console.error("❌ File not found. Please check the path and try again.");
-            process.exit(1);
+        console.log(chalk.red("✍️ Introdu textul pentru WhatsApp rând cu rând. Când ai terminat, scrie 'gata'."));
+        messages = [];
+        while (true) {
+            const line = await askQuestion(chalk.red("📝 Text: "));
+            if (line.toLowerCase() === "gata") break;
+            messages.push(line);
         }
-        messages = fs.readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
-        msgDelay = parseInt(await askQuestion("Enter the delay in seconds between messages: "), 10) * 1000;
 
+        messageDelay = parseInt(await askQuestion(chalk.red("⏳ Delay între mesaje (secunde): ")), 10) * 1000;
+
+        // Salvăm datele în globalThis
         globalThis.targets = targets;
         globalThis.messages = messages;
-        globalThis.msgDelay = msgDelay;
+        globalThis.messageDelay = messageDelay;
     }
 
-    resumeSending(sock, targets, messages, msgDelay);
+    resumeSending(sock, targets, messages, messageDelay);
 }
 
-// Funcția care reia trimiterea mesajelor de unde a rămas
-async function resumeSending(sock, targets, messages, msgDelay) {
+// Trimiterea mesajelor
+async function resumeSending(sock, targets, messages, messageDelay) {
     let currentIndex = loadProgress();
 
     while (true) {
         for (let i = currentIndex; i < messages.length; i++) {
             for (const target of targets) {
                 try {
+                    // Trimite mesaj
                     await sock.sendMessage(target, { text: messages[i] });
-                    console.log(`📤 Sent to ${target}: "${messages[i]}"`);
+
+                    // Afișare detalii
+                    const now = new Date();
+                    const formattedDate = now.toLocaleDateString("ro-RO", { day: "numeric", month: "long" });
+                    const formattedTime = now.toLocaleTimeString("ro-RO");
+
+                    console.log(chalk.red(`\n📤 Trimite către ${target}: "${messages[i]}"`));
+                    console.log(chalk.red(`AUTOR CAGULA`));
+                    console.log(chalk.red(`ZIUA: ${formattedDate}`));
+                    console.log(chalk.red(`ORA: ${formattedTime}`));
+
+                    // Salvăm progresul
                     saveProgress(i);
                 } catch (error) {
-                    // Filtrăm erorile 408 și 428 pentru a nu le afișa
+                    // Dacă nu e eroare de tip 408 / 428, o afișăm
                     if (![408, 428].includes(error?.output?.statusCode)) {
-                        console.error(`❌ Error sending message to ${target}:`, error);
+                        console.error(chalk.red(`❌ Eroare la trimitere către ${target}:`, error));
                     }
                 }
-                await delay(msgDelay);
+                await delay(messageDelay);
             }
             currentIndex = i + 1;
         }
@@ -212,9 +225,9 @@ async function resumeSending(sock, targets, messages, msgDelay) {
     }
 }
 
-// Handlers pentru a nu opri scriptul la erori
-process.on("uncaughtException", (err) => {});
-process.on("unhandledRejection", (reason) => {});
+// Prevenire oprire script la erori
+process.on("uncaughtException", () => {});
+process.on("unhandledRejection", () => {});
 
-// Pornește botul
+// Rulează botul
 startBot();
