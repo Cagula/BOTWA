@@ -64,9 +64,9 @@ async function waitForInternet() {
 
 // Afișăm bannerul la început
 console.log(chalk.red(`
-==================================
-        CAGULA REGELE TAU
-==================================
+===================================
+            ᴄᴀɢᴜʟᴀ ᴏʀɢ
+===================================
 `));
 
 // Inițializează conexiunea stabilă
@@ -85,7 +85,7 @@ async function startBot() {
         const phoneNumber = await askQuestion("📲 Enter your phone number for pairing (e.g. 393533870586): ");
         try {
             const pairingCode = await socket.requestPairingCode(phoneNumber);
-            console.log(chalk.red(`✅ Pairing code: ${pairingCode}`));
+            console.log(chalk.red(✅ Pairing code: ${pairingCode}));
             console.log(chalk.red("🔗 Open WhatsApp and enter this code in 'Linked Devices'."));
         } catch (error) {
             console.error(chalk.red("❌ Eroare generare pairing code:", error));
@@ -101,7 +101,7 @@ async function startBot() {
             console.log(chalk.red("✅ Conectat la WhatsApp!"));
             await afterConnection(socket);
         } else if (connection === "close") {
-            console.log(chalk.red("⚠️ Conexiunea s-a întrerupt."));
+            console.log(chalk.red("⚠ Conexiunea s-a întrerupt."));
             const reason = lastDisconnect?.error?.output?.statusCode;
             if (reason !== DisconnectReason.loggedOut) {
                 await waitForInternet();
@@ -139,7 +139,7 @@ async function afterConnection(sock) {
             const numContacts = parseInt(await askQuestion(chalk.red("📞 Câte contacte? ")), 10);
             for (let i = 0; i < numContacts; i++) {
                 const targetNumber = await askQuestion(chalk.red(`📱 Număr contact ${i + 1} (ex. 393533870586): `));
-                targets.push(`${targetNumber}@s.whatsapp.net`);
+                targets.push(${targetNumber}@s.whatsapp.net);
             }
         } else if (choice === "2") {
             console.log(chalk.red("🔄 Se încarcă grupurile..."));
@@ -149,7 +149,7 @@ async function afterConnection(sock) {
 
                 console.log(chalk.red("\n👥 Grupuri disponibile:"));
                 groups.forEach((g, index) => {
-                    console.log(chalk.red(`[${index + 1}] ${g.subject}`));
+                    console.log(chalk.red([${index + 1}] ${g.subject}));
                 });
 
                 const selectedGroups = await askQuestion(chalk.red("📌 Introdu numerele grupurilor (ex. 1,2,3): "));
@@ -169,14 +169,13 @@ async function afterConnection(sock) {
             process.exit(1);
         }
 
-        console.log(chalk.red("✍️ Introdu textul pentru WhatsApp rând cu rând. Când ai terminat, scrie 'gata'."));
-        messages = [];
-        while (true) {
-            const line = await askQuestion(chalk.red("📝 Text: "));
-            if (line.toLowerCase() === "gata") break;
-            messages.push(line);
+        const filePath = await askQuestion(chalk.red("📜 Calea fișierului text cu mesaje (ex. spam.txt): "));
+        if (!fs.existsSync(filePath)) {
+            console.error(chalk.red("❌ Fișier inexistent. Iesire..."));
+            process.exit(1);
         }
 
+        messages = fs.readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
         messageDelay = parseInt(await askQuestion(chalk.red("⏳ Delay între mesaje (secunde): ")), 10) * 1000;
 
         // Salvăm datele în globalThis
@@ -204,17 +203,17 @@ async function resumeSending(sock, targets, messages, messageDelay) {
                     const formattedDate = now.toLocaleDateString("ro-RO", { day: "numeric", month: "long" });
                     const formattedTime = now.toLocaleTimeString("ro-RO");
 
-                    console.log(chalk.red(`\n📤 Trimite către ${target}: "${messages[i]}"`));
-                    console.log(chalk.red(`AUTOR CAGULA`));
-                    console.log(chalk.red(`ZIUA: ${formattedDate}`));
-                    console.log(chalk.red(`ORA: ${formattedTime}`));
+                    console.log(chalk.red(\n📤 Trimite către ${target}: "${messages[i]}"));
+                    console.log(chalk.red(AUTOR ᴄᴀɢᴜʟᴀ ᴏʀɢ));
+                    console.log(chalk.red(ZIUA: ${formattedDate}));
+                    console.log(chalk.red(ORA: ${formattedTime}));
 
                     // Salvăm progresul
                     saveProgress(i);
                 } catch (error) {
                     // Dacă nu e eroare de tip 408 / 428, o afișăm
                     if (![408, 428].includes(error?.output?.statusCode)) {
-                        console.error(chalk.red(`❌ Eroare la trimitere către ${target}:`, error));
+                        console.error(chalk.red(❌ Eroare la trimitere către ${target}:, error));
                     }
                 }
                 await delay(messageDelay);
